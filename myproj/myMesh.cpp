@@ -160,51 +160,14 @@ bool myMesh::readFile(std::string filename)
 
 void myMesh::computeNormals()
 {
-	for (unsigned int i = 0; i < vertices.size(); i++)
-	{
-		if (vertices[i] == NULL) continue;
-		if (vertices[i]->normal == NULL) vertices[i]->normal = new myVector3D();
-		vertices[i]->normal->clear();
-	}
-
 	for (unsigned int i = 0; i < faces.size(); i++)
 	{
-		if (faces[i] == NULL) continue;
-		if (faces[i]->normal == NULL) faces[i]->normal = new myVector3D();
-		faces[i]->normal->clear();
-
-		myHalfedge *e0 = faces[i]->adjacent_halfedge;
-		if (e0 == NULL || e0->next == NULL || e0->next->next == NULL) continue;
-		if (e0->source == NULL || e0->next->source == NULL || e0->next->next->source == NULL) continue;
-		if (e0->source->point == NULL || e0->next->source->point == NULL || e0->next->next->source->point == NULL) continue;
-
-		myVector3D fn;
-		fn.setNormal(e0->source->point, e0->next->source->point, e0->next->next->source->point);
-		faces[i]->normal->dX = fn.dX;
-		faces[i]->normal->dY = fn.dY;
-		faces[i]->normal->dZ = fn.dZ;
-
-		myHalfedge *e = e0;
-		do
-		{
-			if (e->source != NULL && e->source->normal != NULL)
-				*(e->source->normal) += fn;
-			e = e->next;
-		} while (e != NULL && e != e0);
+		faces[i]->computeNormal();
 	}
 
 	for (unsigned int i = 0; i < vertices.size(); i++)
 	{
-		if (vertices[i] == NULL || vertices[i]->normal == NULL) continue;
-		double len = vertices[i]->normal->length();
-		if (len > 1e-12)
-			vertices[i]->normal->normalize();
-		else
-		{
-			vertices[i]->normal->dX = 0.0;
-			vertices[i]->normal->dY = 0.0;
-			vertices[i]->normal->dZ = 1.0;
-		}
+		vertices[i]->computeNormal();
 	}
 }
 
