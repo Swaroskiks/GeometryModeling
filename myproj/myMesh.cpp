@@ -232,13 +232,77 @@ void myMesh::subdivisionCatmullClark()
 
 void myMesh::triangulate()
 {
-	/**** TODO ****/
+	vector<myFace *> original_faces(faces);
+	for (unsigned int i = 0; i < original_faces.size(); i++)
+	{
+		triangulate(original_faces[i]);
+	}
 }
 
-//return false if already triangle, true othewise.
 bool myMesh::triangulate(myFace *f)
 {
-	/**** TODO ****/
-	return false;
+	if (f == NULL || f->adjacent_halfedge == NULL) return false;
+
+	int n = 0;
+	myHalfedge *e = f->adjacent_halfedge;
+	do {
+		n++;
+		e = e->next;
+	} while (e != f->adjacent_halfedge);
+
+	if (n <= 3) return false;
+
+	myHalfedge *h0 = f->adjacent_halfedge;
+	myHalfedge *h1 = h0->next;
+	myHalfedge *h_prev = h1;
+
+	for (int i = 0; i < n - 3; i++)
+	{
+		myHalfedge *h2 = h_prev->next;
+
+		myFace *nf = new myFace();
+		faces.push_back(nf);
+
+		myHalfedge *diag_forward = new myHalfedge();
+		myHalfedge *diag_back = new myHalfedge();
+		halfedges.push_back(diag_forward);
+		halfedges.push_back(diag_back);
+
+		diag_forward->twin = diag_back;
+		diag_back->twin = diag_forward;
+
+		diag_forward->source = h2->source;
+		diag_back->source = h0->source;
+
+		h_prev->next = diag_forward;
+		diag_forward->prev = h_prev;
+		diag_forward->next = h0;
+		h0->prev = diag_forward;
+
+		diag_forward->adjacent_face = f;
+
+		diag_back->next = h2;
+		h2->prev = diag_back;
+		diag_back->adjacent_face = nf;
+
+		myHalfedge *tmp = h2;
+		while (tmp != NULL) {
+			tmp->adjacent_face = nf;
+			if (tmp->next == h0) {
+				tmp->next = diag_back;
+				diag_back->prev = tmp;
+				break;
+			}
+			tmp = tmp->next;
+		}
+
+		nf->adjacent_halfedge = diag_back;
+
+		f = nf;
+		h0 = diag_back;
+		h_prev = h2;
+	}
+
+	return true;
 }
 

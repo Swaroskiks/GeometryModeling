@@ -605,12 +605,27 @@ void display()
 		vector<GLfloat> silhouette_vertices;
 		for (vector<myHalfedge *>::iterator it = m->halfedges.begin(); it != m->halfedges.end(); it++)
 		{
-			/**** TODO: WRITE CODE TO COMPUTE SILHOUETTE ****/
 			myVertex *v1 = (*it)->source;
 			if ((*it)->twin == NULL) continue;
 			myVertex *v2 = (*it)->twin->source;
 
-			if ( 0 /*ADD THE CONDITION TO CHECK IF THE HALFEDGE DEFINED BY (V1, V2) IS A SILHOUETTE EDGE*/ )
+			myFace *f1 = (*it)->adjacent_face;
+			myFace *f2 = (*it)->twin->adjacent_face;
+			if (f1 == NULL || f2 == NULL) continue;
+			if (f1->normal == NULL || f2->normal == NULL) continue;
+
+			myPoint3D mid((v1->point->X + v2->point->X) / 2.0,
+			              (v1->point->Y + v2->point->Y) / 2.0,
+			              (v1->point->Z + v2->point->Z) / 2.0);
+						  
+			myVector3D view(camera_eye.X - mid.X,
+			                camera_eye.Y - mid.Y,
+			                camera_eye.Z - mid.Z);
+
+			double dot1 = f1->normal->dX * view.dX + f1->normal->dY * view.dY + f1->normal->dZ * view.dZ;
+			double dot2 = f2->normal->dX * view.dX + f2->normal->dY * view.dY + f2->normal->dZ * view.dZ;
+
+			if (dot1 * dot2 < 0)
 			{
 				append_overlay_vertex(silhouette_vertices, v1->point);
 				append_overlay_vertex(silhouette_vertices, v2->point);
@@ -684,7 +699,7 @@ void initMesh()
 	closest_face = NULL;
 
 	m = new myMesh();
-	if (m->readFile(resolve_resource_path("hand.obj"))) {
+	if (m->readFile(resolve_resource_path("dolphin.obj"))) {
 		m->computeNormals();
 		makeBuffers(m);
 	}
