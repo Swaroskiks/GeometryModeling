@@ -5,6 +5,7 @@
 #include <map>
 #include <utility>
 #include <cstdlib>
+#include <cmath>
 #include <GL/glew.h>
 #include "myVector3D.h"
 
@@ -243,64 +244,129 @@ bool myMesh::triangulate(myFace *f)
 {
 	if (f == NULL || f->adjacent_halfedge == NULL) return false;
 
-	int n = 0;
-	myHalfedge *e = f->adjacent_halfedge;
-	do {
-		n++;
-		e = e->next;
-	} while (e != f->adjacent_halfedge);
+	vector<myHalfedge*> ring;
+	{
+		myHalfedge *e = f->adjacent_halfedge;
+		size_t guard = 0;
+		do { ring.push_back(e); e = e->next; guard++; }
+		while (e != f->adjacent_halfedge && guard < 100000);
+	}
 
+	int n = (int)ring.size();
 	if (n <= 3) return false;
 
-	myHalfedge *h0 = f->adjacent_halfedge;
-	myHalfedge *h1 = h0->next;
-	myHalfedge *h_prev = h1;
+	// On utilise la méthode de Newell pour calculer la normale de la face
+	double nx = 0, ny = 0, nz = 0;
+	for (int i = 0; i < n; i++) {
+		myPoint3D *p0 = ring[i]->source->point;
+		myPoint3D *p1 = ring[(i + 1) % n]->source->point;
+		nx += (p0->Y - p1->Y) * (p0->Z + p1->Z);
+		ny += (p0->Z - p1->Z) * (p0->X + p1->X);
+		nz += (p0->X - p1->X) * (p0->Y + p1->Y);
+	}
+	int skip;
+	if (fabs(nx) >= fabs(ny) && fabs(nx) >= fabs(nz)) skip = 0;
+	else if (fabs(ny) >= fabs(nx) && fabs(ny) >= fabs(nz)) skip = 1;
+	else skip = 2;
 
-	for (int i = 0; i < n - 3; i++)
-	{
-		myHalfedge *h2 = h_prev->next;
+	auto get2D = [&](myPoint3D *p) -> pair<double, double> {
+		if (skip == 0) return { p->Y, p->Z };
+		if (skip == 1) return { p->X, p->Z };
+		return { p->X, p->Y };
+	};
 
-		myFace *nf = new myFace();
-		faces.push_back(nf);
+	double area2 = 0;
+	for (int i = 0; i < n; i++) {
+		auto p0 = get2D(ring[i]->source->point);
+		auto p1 = get2D(ring[(i + 1) % n]->source->point);
+		area2 += p0.first * p1.second - p1.first * p0.second;
+	}
+	double wind = (area2 >= 0) ? 1.0 : -1.0;
 
-		myHalfedge *diag_forward = new myHalfedge();
-		myHalfedge *diag_back = new myHalfedge();
-		halfedges.push_back(diag_forward);
-		halfedges.push_back(diag_back);
+	auto cross2D = [](double ax, double ay, double bx, double by, double px, double py) {
+		return (bx - ax) * (py - ay) - (by - ay) * (px - ax);
+	};
 
-		diag_forward->twin = diag_back;
-		diag_back->twin = diag_forward;
+	auto insideTriangle = [&](pair<double,double> p,
+	                          pair<double,double> a,
+	                          pair<double,double> b,
+	                          pair<double,double> c) {
+		double d1 = cross2D(a.first,a.second, b.first,b.second, p.first,p.second) * wind;
+		double d2 = cross2D(b.first,b.second, c.first,c.second, p.first,p.second) * wind;
+		double d3 = cross2D(c.first,c.second, a.first,a.second, p.first,p.second) * wind;
+		return d1 > 1e-10 && d2 > 1e-10 && d3 > 1e-10;
+	};
 
-		diag_forward->source = h2->source;
-		diag_back->source = h0->source;
+	while ((int)ring.size() > 3) {
+		int sz = (int)ring.size();
+		int ear = -1;
 
-		h_prev->next = diag_forward;
-		diag_forward->prev = h_prev;
-		diag_forward->next = h0;
-		h0->prev = diag_forward;
+		for (int i = 0; i < sz; i++) {
+			int pi = (i - 1 + sz) % sz;
+			int ni = (i + 1) % sz;
 
-		diag_forward->adjacent_face = f;
+			auto vp = get2D(ring[pi]->source->point);
+			auto vi = get2D(ring[i]->source->point);
+			auto vn = get2D(ring[ni]->source->point);
 
-		diag_back->next = h2;
-		h2->prev = diag_back;
-		diag_back->adjacent_face = nf;
+			if (cross2D(vp.first,vp.second, vi.first,vi.second, vn.first,vn.second) * wind <= 1e-10)
+				continue;
 
-		myHalfedge *tmp = h2;
-		while (tmp != NULL) {
-			tmp->adjacent_face = nf;
-			if (tmp->next == h0) {
-				tmp->next = diag_back;
-				diag_back->prev = tmp;
-				break;
+			bool valid = true;
+			for (int j = 0; j < sz && valid; j++) {
+				if (j == pi || j == i || j == ni) continue;
+				if (insideTriangle(get2D(ring[j]->source->point), vp, vi, vn))
+					valid = false;
 			}
-			tmp = tmp->next;
+			if (valid) { ear = i; break; }
 		}
 
-		nf->adjacent_halfedge = diag_back;
+		if (ear < 0) ear = 0;
 
-		f = nf;
-		h0 = diag_back;
-		h_prev = h2;
+		int prev_i = (ear - 1 + sz) % sz;
+		int next_i = (ear + 1) % sz;
+
+		myFace *ear_face = new myFace();
+		faces.push_back(ear_face);
+
+	    myHalfedge *diag_back    = new myHalfedge();
+		myHalfedge *diag_forward = new myHalfedge();
+		halfedges.push_back(diag_back);
+		halfedges.push_back(diag_forward);
+
+		diag_back->twin    = diag_forward;
+		diag_forward->twin = diag_back;
+		diag_back->source    = ring[next_i]->source;
+		diag_forward->source = ring[prev_i]->source;
+
+		ring[prev_i]->adjacent_face = ear_face;
+		ring[ear]->adjacent_face    = ear_face;
+		diag_back->adjacent_face    = ear_face;
+
+		ring[prev_i]->next = ring[ear];    ring[ear]->prev     = ring[prev_i];
+		ring[ear]->next    = diag_back;    diag_back->prev     = ring[ear];
+		diag_back->next    = ring[prev_i]; ring[prev_i]->prev  = diag_back;
+		ear_face->adjacent_halfedge = ring[prev_i];
+
+		diag_forward->adjacent_face = f;
+		myHalfedge *before = ring[(prev_i - 1 + sz) % sz];
+		before->next         = diag_forward; diag_forward->prev = before;
+		diag_forward->next   = ring[next_i]; ring[next_i]->prev = diag_forward;
+
+		vector<myHalfedge*> new_ring;
+		new_ring.reserve(sz - 1);
+		for (int j = 0; j < sz; j++) {
+			if (j == ear) continue;
+			new_ring.push_back(j == prev_i ? diag_forward : ring[j]);
+		}
+		ring = std::move(new_ring);
+	}
+
+	f->adjacent_halfedge = ring[0];
+	for (int j = 0; j < 3; j++) {
+		ring[j]->adjacent_face = f;
+		ring[j]->next          = ring[(j + 1) % 3];
+		ring[(j + 1) % 3]->prev = ring[j];
 	}
 
 	return true;

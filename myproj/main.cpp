@@ -699,10 +699,11 @@ void initMesh()
 	closest_face = NULL;
 
 	m = new myMesh();
-	if (m->readFile(resolve_resource_path("dolphin.obj"))) {
+	if (m->readFile(resolve_resource_path("gear.obj"))) {
 		m->computeNormals();
 		makeBuffers(m);
 	}
+
 }
 
 
